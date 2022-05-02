@@ -20,6 +20,10 @@ type WalkOpt struct {
 	// before performing the fs walk
 	FollowPaths []string
 	Map         FilterFunc
+
+	// SkipUnmapped() allows Map() to skip directories. Only called on paths where
+	// Map() returned false.
+	SkipUnmapped FilterFunc
 }
 
 func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
@@ -156,6 +160,10 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		default:
 			if opt != nil && opt.Map != nil {
 				if allowed := opt.Map(stat.Path, stat); !allowed {
+					skip := opt.SkipUnmapped != nil && opt.SkipUnmapped(stat.Path, stat)
+					if skip {
+						return filepath.SkipDir
+					}
 					return nil
 				}
 			}

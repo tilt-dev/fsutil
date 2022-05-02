@@ -284,6 +284,37 @@ func TestMatchPrefix(t *testing.T) {
 	assert.Equal(t, false, partial)
 }
 
+func TestWalkerMapSkipDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD excludeDir dir",
+		"ADD excludeDir/a.txt file",
+		"ADD includeDir dir",
+		"ADD includeDir/a.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	// SkipUnmappedDir is a performance optimization - don't even
+	// bother walking directories we don't care about.
+	walked := []string{}
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &WalkOpt{
+		Map: func(_ string, s *types.Stat) bool {
+			walked = append(walked, s.Path)
+			return strings.HasPrefix(s.Path, "includeDir")
+		},
+		SkipUnmapped: func(_ string, s *types.Stat) bool {
+			return strings.HasPrefix(s.Path, "excludeDir")
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, `dir includeDir
+file includeDir/a.txt
+`, string(b.Bytes()))
+	assert.Equal(t, []string{"excludeDir", "includeDir", "includeDir/a.txt"}, walked)
+}
+
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
 	return func(path string, fi os.FileInfo, err error) error {
 		stat, ok := fi.Sys().(*types.Stat)
